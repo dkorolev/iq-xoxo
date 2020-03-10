@@ -2,7 +2,7 @@
 
 CPLUSPLUS?=g++
 
-CPPFLAGS=-std=c++17 -W -Wall
+CPPFLAGS=-std=c++17 -W -Wall -O3
 LDFLAGS=
 
 SRC=$(wildcard *.cc)

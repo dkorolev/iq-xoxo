@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <set>
 #include <string>
@@ -126,7 +127,8 @@ int main(int argc, char** argv) {
     }
   }
   std::vector<std::string> board(5);
-  std::vector<bool> allowed_pieces(10, true);
+  std::vector<bool> piece_left_to_be_placed(10, true);
+  int cells_left_to_cover = 0;
   // Read and parse the problem file.
   {
     // NOTE(dkorolev): This does not check whether the right letters were used for the pieces that form the problem.
@@ -141,10 +143,104 @@ int main(int argc, char** argv) {
       for (int j = 0; j < 10; ++j) {
         ASSERT(board[i][j] == '.' || board[i][j] >= 'A' && board[i][j] <= 'J');
         if (board[i][j] != '.') {
-          allowed_pieces[board[i][j] - 'A'] = false;
+          piece_left_to_be_placed[board[i][j] - 'A'] = false;
+        } else {
+          ++cells_left_to_cover;
         }
       }
     }
-    // std::cerr << "Using " << std::count(std::begin(allowed_pieces), std::end(allowed_pieces), true) << " pieces.\n";
+    // std::cerr << "Using " << std::count(std::begin(piece_left_to_be_placed), std::end(piece_left_to_be_placed), true) << "
+    // pieces.\n";
   }
+  // Prepare the data structures to keep track of which positions are still legal for which pieces.
+  std::vector<int> legal_placements_active_count(10);
+  std::vector<std::vector<int>> legal_placements_indexes(10);
+  for (int t = 0; t < 10; ++t) {
+    legal_placements_active_count[t] = piece_left_to_be_placed[t] ? static_cast<int>(legal_placements[t].size()) : 0;
+    for (int k = 0; k < legal_placements_active_count[t]; ++k) {
+      legal_placements_indexes[t].push_back(k);
+    }
+    // Eliminate certain placements of this piece if they do not fit the original problem setup.
+    legal_placements_active_count[t] = std::partition(std::begin(legal_placements_indexes[t]),
+                                                      std::end(legal_placements_indexes[t]),
+                                                      [&](int k) {
+                                                        for (auto const& cell : legal_placements[t][k]) {
+                                                          if (board[cell.first][cell.second] != '.') {
+                                                            return false;
+                                                          }
+                                                        }
+                                                        return true;
+                                                      }) -
+                                       std::begin(legal_placements_indexes[t]);
+  }
+  // See https://en.wikipedia.org/wiki/Knuth%27s_Algorithm_X` and https://en.wikipedia.org/wiki/Dancing_Links for more.
+  int total_solutions = 0;
+  std::function<void()> const Recursion = [&]() {
+    if (!cells_left_to_cover) {
+      // The solution is found.
+      for (int i = 0; i < 5; ++i) {
+        std::cout << board[i] << std::endl;
+      }
+      std::cout << std::endl;
+      ++total_solutions;
+    } else {
+      // Find the piece, among those left to be placed, with the fewest possible number of ways to place it.
+      int next_t = -1;
+      for (int t = 0; t < 10; ++t) {
+        if (piece_left_to_be_placed[t]) {
+          next_t = t;
+          break;
+        }
+      }
+      ASSERT(next_t != -1);
+      for (int t = next_t + 1; t < 10; ++t) {
+        if (piece_left_to_be_placed[t] && legal_placements_active_count[t] < legal_placements_active_count[next_t]) {
+          next_t = t;
+        }
+      }
+      // Try all placements of piece `next_t`.
+      char const next_c = 'A' + next_t;
+      piece_left_to_be_placed[next_t] = false;
+      auto const save_legal_placements_active_count = legal_placements_active_count;
+      int const cells_in_next_piece = static_cast<int>(legal_placements[next_t].front().size());
+      ASSERT(cells_in_next_piece == 5);  // NOTE(dkorolev): Unnecessary, a sanity check.
+      cells_left_to_cover -= cells_in_next_piece;
+      for (int z = 0; z < legal_placements_active_count[next_t]; ++z) {
+        int const k = legal_placements_indexes[next_t][z];
+        for (auto const& cell : legal_placements[next_t][k]) {
+          ASSERT(board[cell.first][cell.second] == '.');
+          board[cell.first][cell.second] = next_c;
+          for (int other_t = 0; other_t < 10; ++other_t) {
+            if (piece_left_to_be_placed[other_t]) {
+              legal_placements_active_count[other_t] =
+                  std::partition(std::begin(legal_placements_indexes[other_t]),
+                                 std::begin(legal_placements_indexes[other_t]) + legal_placements_active_count[other_t],
+                                 [&](int other_k) {
+                                   for (auto const& other_cell : legal_placements[other_t][other_k]) {
+                                     if (cell == other_cell) {
+                                       return false;
+                                     }
+                                   }
+                                   return true;
+                                 }) -
+                  std::begin(legal_placements_indexes[other_t]);
+            }
+          }
+        }
+        Recursion();
+        for (auto const& cell : legal_placements[next_t][k]) {
+          board[cell.first][cell.second] = '.';
+        }
+        for (int other_t = 0; other_t < 10; ++other_t) {
+          if (piece_left_to_be_placed[other_t]) {
+            legal_placements_active_count[other_t] = save_legal_placements_active_count[other_t];
+          }
+        }
+      }
+      piece_left_to_be_placed[next_t] = true;
+      cells_left_to_cover += cells_in_next_piece;
+    }
+  };
+  Recursion();
+  std::cout << "Total solutions: " << total_solutions << std::endl;
 }
