@@ -233,16 +233,16 @@ int main(int argc, char** argv) {
           next_t = t;
         }
       }
-      // Try all placements of piece `next_t`.
+      // Try all placements of the piece `next_t`.
       char const next_c = 'A' + next_t;
       piece_left_to_be_placed[next_t] = false;
       auto const save_legal_placements_active_count = legal_placements_active_count;
       int const cells_in_next_piece = static_cast<int>(legal_placements[next_t].front().size());
       ASSERT(cells_in_next_piece == 5);  // NOTE(dkorolev): Unnecessary, a sanity check.
       cells_left_to_cover -= cells_in_next_piece;
-      for (int z = 0; z < legal_placements_active_count[next_t]; ++z) {
-        int const k = legal_placements_indexes[next_t][z];
-        for (auto const& cell : legal_placements[next_t][k]) {
+      for (int next_z = 0; next_z < legal_placements_active_count[next_t]; ++next_z) {
+        int const next_k = legal_placements_indexes[next_t][next_z];
+        for (auto const& cell : legal_placements[next_t][next_k]) {
           ASSERT(board[cell.first][cell.second] == '.');
           board[cell.first][cell.second] = next_c;
         }
@@ -251,12 +251,12 @@ int main(int argc, char** argv) {
             legal_placements_active_count[other_t] =
                 std::partition(std::begin(legal_placements_indexes[other_t]),
                                std::begin(legal_placements_indexes[other_t]) + legal_placements_active_count[other_t],
-                               [&](int other_k) { return legal_placements_compatible[next_t][other_t][k][other_k]; }) -
+                               [&](int other_k) { return legal_placements_compatible[next_t][other_t][next_k][other_k]; }) -
                 std::begin(legal_placements_indexes[other_t]);
           }
         }
         Recursion();
-        for (auto const& cell : legal_placements[next_t][k]) {
+        for (auto const& cell : legal_placements[next_t][next_k]) {
           board[cell.first][cell.second] = '.';
         }
         for (int other_t = 0; other_t < 10; ++other_t) {
