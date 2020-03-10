@@ -19,6 +19,11 @@ constexpr static const char* const kProblemFile = "problem.txt";
 int main(int argc, char** argv) {
   // `legal_placements[t]` lists all possible legal ways to place piece `t` onto the board.
   std::vector<std::vector<std::vector<std::pair<int, int>>>> legal_placements(10);
+  // Pre-computed lists of legal placements intersections up front.
+  // Used for the optimization to quickly discard the placements of pieces that are becoming illegal
+  // as other pieces are being placed.
+  std::vector<std::vector<std::vector<std::vector<bool>>>> legal_placements_compatible(
+      10, std::vector<std::vector<std::vector<bool>>>(10));
   // Read and parse the pieces file.
   {
     std::ifstream fi_pieces(kPiecesFile);
@@ -125,6 +130,36 @@ int main(int argc, char** argv) {
       Mark();
       // std::cerr << "Piece `" << c << "`: " << legal_placements[t].size() << " legal placements.\n";
     }
+    // Now, the optimization: prepare the lists of intersections of legal placements up front.
+    {
+      for (int t1 = 0; t1 < 10; ++t1) {
+        for (int t2 = 0; t2 < 10; ++t2) {
+          if (t1 != t2) {
+            legal_placements_compatible[t1][t2] = std::vector<std::vector<bool>>(
+                legal_placements[t1].size(), std::vector<bool>(legal_placements[t2].size(), false));
+          }
+        }
+      }
+      std::vector<std::pair<int, int>> tmp;
+      for (int t1 = 0; t1 < 10; ++t1) {
+        for (int t2 = t1 + 1; t2 < 10; ++t2) {
+          for (int k1 = 0; k1 < static_cast<int>(legal_placements[t1].size()); ++k1) {
+            for (int k2 = 0; k2 < static_cast<int>(legal_placements[t2].size()); ++k2) {
+              tmp.clear();
+              std::set_intersection(std::begin(legal_placements[t1][k1]),
+                                    std::end(legal_placements[t1][k1]),
+                                    std::begin(legal_placements[t2][k2]),
+                                    std::end(legal_placements[t2][k2]),
+                                    std::back_inserter(tmp));
+              if (tmp.empty()) {
+                legal_placements_compatible[t1][t2][k1][k2] = true;
+                legal_placements_compatible[t2][t1][k2][k1] = true;
+              }
+            }
+          }
+        }
+      }
+    }
   }
   std::vector<std::string> board(5);
   std::vector<bool> piece_left_to_be_placed(10, true);
@@ -210,21 +245,14 @@ int main(int argc, char** argv) {
         for (auto const& cell : legal_placements[next_t][k]) {
           ASSERT(board[cell.first][cell.second] == '.');
           board[cell.first][cell.second] = next_c;
-          for (int other_t = 0; other_t < 10; ++other_t) {
-            if (piece_left_to_be_placed[other_t]) {
-              legal_placements_active_count[other_t] =
-                  std::partition(std::begin(legal_placements_indexes[other_t]),
-                                 std::begin(legal_placements_indexes[other_t]) + legal_placements_active_count[other_t],
-                                 [&](int other_k) {
-                                   for (auto const& other_cell : legal_placements[other_t][other_k]) {
-                                     if (cell == other_cell) {
-                                       return false;
-                                     }
-                                   }
-                                   return true;
-                                 }) -
-                  std::begin(legal_placements_indexes[other_t]);
-            }
+        }
+        for (int other_t = 0; other_t < 10; ++other_t) {
+          if (piece_left_to_be_placed[other_t]) {
+            legal_placements_active_count[other_t] =
+                std::partition(std::begin(legal_placements_indexes[other_t]),
+                               std::begin(legal_placements_indexes[other_t]) + legal_placements_active_count[other_t],
+                               [&](int other_k) { return legal_placements_compatible[next_t][other_t][k][other_k]; }) -
+                std::begin(legal_placements_indexes[other_t]);
           }
         }
         Recursion();
